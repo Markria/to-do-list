@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>待办同步｜电脑手机双向</title>
+<style>
+* {margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft Yahei",sans-serif;}
+html,body{background:#f5f7fa;padding:20px;}
+#app{max-width:640px;margin:0 auto;background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);border-radius:20px;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);}
+#titleBar{background:linear-gradient(135deg,#5b86e5,#36d1dc);color:#fff;padding:10px 12px;border-radius:14px;font-size:15px;font-weight:bold;text-align:center;margin-bottom:14px;}
+#addBox{display:flex;gap:8px;margin-bottom:14px;}
+#topInput{flex:1;padding:9px 12px;border:1px solid rgba(0,0,0,0.08);border-radius:12px;outline:none;font-size:13px;background:rgba(255,255,255,0.45);}
+#addBtn{padding:9px 14px;background:linear-gradient(135deg,#5b86e5,#36d1dc);color:#fff;border:none;border-radius:12px;cursor:pointer;font-size:13px;}
+#container{display:flex;gap:16px;height:460px;}
+#left,#right{width:50%;overflow-y:auto;padding-right:4px;}
+#left::-webkit-scrollbar,#right::-webkit-scrollbar{width:4px;}
+#left::-webkit-scrollbar-thumb,#right::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15);border-radius:4px;}
+.group{margin-bottom:12px;}
+.group-title{font-size:14px;font-weight:600;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.3);margin-bottom:8px;color:#2d3436;}
+.todo-item{display:flex;align-items:center;gap:6px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:rgba(255,255,255,0.35);}
+.todo-done .todo-text-input{text-decoration:line-through;color:#888;}
+.todo-text-input{flex:1;padding:4px 6px;border:1px solid transparent;border-radius:6px;font-size:13px;background:transparent;outline:none;}
+.todo-text-input:focus{border-color:#5b86e5;background:rgba(255,255,255,0.6);}
+.del-btn{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#ff6b6b;font-size:14px;cursor:pointer;}
+input[type="checkbox"]{transform:scale(1.05);accent-color:#5b86e5;cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="titleBar">📋 待办同步｜电脑编辑 手机自动同步</div>
+  <div id="addBox">
+    <input type="text" id="topInput" placeholder="输入 5.13xxx / 6.15xxx 自动分组">
+    <button id="addBtn">添加</button>
+  </div>
+  <div id="container">
+    <div id="left"></div>
+    <div id="right"></div>
+  </div>
+</div>
+
+<script>
+// 用浏览器本地存储做同步仓库
+const STORAGE_KEY = "TODO_SYNC_DATA";
+
+const defaultList = [
+  "RKW - makeup brush set sample 反馈 （客人5.6寄国际快递）",
+  "Onyx - 三开pp sample，周二周三给客人寄样",
+  "Onyx - 外采支架手持镜sample后续",
+  "IJB - Soft touch （返单）new sample 进度",
+  "MGI - 新收纳sample - 打样中，确认样品送达时间给客人寄样",
+  "JJA - portable bag 追样品反馈",
+  "Artbox - 三开样品时间 & 波浪大货彩盒update",
+  "Shawspencer - 追豹纹mirror客人反馈 & 波浪三开返单",
+  "Mercati - mini pad 返单 & 新项目推品",
+  "CMP - HK Fair款式报价",
+  "U10 - 浴室镜样品进度，周二给客人寄样",
+  "BC - BTS 大货船期 & 新项目内容整理",
+  "荣兴 - 之前project的进度&新项目推品",
+  "嘉度 - 10珠好莱坞5.12客人开会，5.15前追反馈",
+  "Peanuts - 5.15前mail客人追报价反馈",
+  "Beter - 5.15之前mail客人追sample反馈",
+  "KPI - 5.15之前mail客人追报价反馈",
+  "Samway - 5.12wechat客人推新品包",
+  "Splash home - hellokitty项目5.15之前追客人项目反馈",
+  "Fisura - 5.15之前客人没回mail，追报价反馈",
+  "Four Star - 5.15之前给客人发Decor mirror整理文件",
+  "HK Fair客人 - 5.15之前追一轮报价反馈",
+  "Core Home - 5.12 heart chain款式share",
+  "法兰克福客人电联 - 5.13-5.15之间"
+];
+
+function getList(){
+  let data = localStorage.getItem(STORAGE_KEY);
+  return data ? JSON.parse(data) : defaultList.map(t=>({text:t,done:false}));
+}
+function saveList(list){
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(list));
+}
+
+function getDateTag(text){
+  let m = text.match(/(\d{1,2}\.\d{1,2})/);
+  return m?m[1]:"";
+}
+
+function render(){
+  let list = getList();
+  let undone = list.filter(i=>!i.done);
+  let done = list.filter(i=>i.done);
+
+  let dateMap = {};
+  let noDateList = [];
+  undone.forEach(item=>{
+    let tag = getDateTag(item.text);
+    if(tag){
+      if(!dateMap[tag]) dateMap[tag]=[];
+      dateMap[tag].push(item);
+    }else{
+      noDateList.push(item);
+    }
+  });
+
+  let dateKeys = Object.keys(dateMap).sort((a,b)=>{
+    let [ma,da] = a.split('.').map(Number);
+    let [mb,db] = b.split('.').map(Number);
+    if(ma!==mb) return ma-mb;
+    return da-db;
+  });
+
+  let leftHtml = "";
+  dateKeys.forEach(key=>{
+    leftHtml += makeGroup(`📅 ${key} 待办`,dateMap[key]);
+  });
+
+  let rightHtml = "";
+  if(noDateList.length) rightHtml += makeGroup("📌 日常待办",noDateList);
+  if(done.length) rightHtml += makeGroup("✅ 已完成",done,true);
+
+  document.getElementById("left").innerHTML = leftHtml;
+  document.getElementById("right").innerHTML = rightHtml;
+}
+
+function makeGroup(title,items,isDone=false){
+  let html = `<div class="group"><div class="group-title">${title}</div>`;
+  let list = getList();
+  items.forEach(item=>{
+    let idx = list.findIndex(x=>x.text===item.text&&x.done===item.done);
+    html += `
+    <div class="todo-item ${isDone?'todo-done':''}" data-idx="${idx}">
+      <input type="checkbox" ${item.done?"checked":""} data-idx="${idx}">
+      <input class="todo-text-input" value="${item.text}" data-idx="${idx}">
+      <span class="del-btn" data-idx="${idx}">×</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+const topInput = document.getElementById("topInput");
+const addBtn = document.getElementById("addBtn");
+function addNew(){
+  let val = topInput.value.trim();
+  if(!val)return;
+  let list = getList();
+  list.push({text:val,done:false});
+  saveList(list);
+  topInput.value="";
+  render();
+}
+addBtn.onclick = addNew;
+topInput.onkeydown = e=>e.key==="Enter"&&addNew();
+
+document.addEventListener("input",e=>{
+  if(e.target.classList.contains("todo-text-input")){
+    let idx = Number(e.target.dataset.idx);
+    let list = getList();
+    list[idx].text = e.target.value;
+    saveList(list);
+  }
+});
+document.addEventListener("change",e=>{
+  if(e.target.type==="checkbox"){
+    let idx = Number(e.target.dataset.idx);
+    let list = getList();
+    list[idx].done = e.target.checked;
+    saveList(list);
+    render();
+  }
+});
+document.addEventListener("click",e=>{
+  if(e.target.classList.contains("del-btn")){
+    let idx = Number(e.target.dataset.idx);
+    let list = getList();
+    list.splice(idx,1);
+    saveList(list);
+    render();
+  }
+});
+document.addEventListener("blur",e=>{
+  if(e.target.classList.contains("todo-text-input")) render();
+},true);
+
+render();
+</script>
+</body>
+</html>
